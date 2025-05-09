@@ -15,67 +15,51 @@ BEGIN
         -- Create a temporary table to store the data before inserting into the fact table
         CREATE TEMPORARY TABLE tmp_item_lifecycle_fact AS
         SELECT
-            oik.product_key AS product_key,
-            oik.durable_product_key AS durable_product_key,
-            ok.customer_key AS customer_key,
-            ok.durable_customer_key AS durable_customer_key,
-            oik.seller_key AS seller_key,
+            ap.product_key AS product_key,
+            ap.durable_product_key AS durable_product_key,
+            ac.customer_key AS customer_key,
+            ac.durable_customer_key AS durable_customer_key,
+            s.seller_key AS seller_key,
             si.sale_indicator_key AS sale_indicator_key,
-            DATE(ok.order_purchase_timestamp) AS purchase_date_key,
-            CONCAT(DATE_FORMAT(ok.order_purchase_timestamp, '%H:%i'), ':00') AS purchase_time_key,
-            DATE(ok.order_approved_at) AS approval_date_key,
-            CONCAT(DATE_FORMAT(ok.order_approved_at, '%H:%i'), ':00') AS approval_time_key,
-            DATE(ok.order_delivered_carrier_date) AS delivery_date_key,
-            CONCAT(DATE_FORMAT(ok.order_delivered_carrier_date, '%H:%i'), ':00') AS delivery_time_key,
-            DATE(ok.order_delivered_customer_date) AS arrival_date_key,
-            CONCAT(DATE_FORMAT(ok.order_delivered_customer_date, '%H:%i'), ':00') AS arrival_time_key,
-            DATE(ok.order_estimated_delivery_date) AS estimated_arrival_date_key,
-            CONCAT(DATE_FORMAT(ok.order_estimated_delivery_date, '%H:%i'), ':00') AS estimated_arrival_time_key,
-            oik.order_id,
-            oik.order_item_id,
-            DATEDIFF(ok.order_approved_at, ok.order_purchase_timestamp) AS purchase_approval_lag,
-            DATEDIFF(ok.order_delivered_customer_date, ok.order_purchase_timestamp) AS purchase_delivery_lag,
-            DATEDIFF(ok.order_delivered_customer_date, ok.order_purchase_timestamp) AS purchase_arrival_lag,
-            DATEDIFF(ok.order_estimated_delivery_date, ok.order_purchase_timestamp) AS purchase_estimated_arrival_lag,
-            DATEDIFF(ok.order_delivered_carrier_date, ok.order_approved_at) AS approval_delivery_lag,
-            DATEDIFF(ok.order_delivered_customer_date, ok.order_approved_at) AS approval_arrival_lag,
-            DATEDIFF(ok.order_estimated_delivery_date, ok.order_approved_at) AS approval_estimated_arrival_lag,
-            DATEDIFF(ok.order_delivered_customer_date, ok.order_delivered_carrier_date) AS delivery_arrival_lag,
-            DATEDIFF(ok.order_estimated_delivery_date, ok.order_delivered_carrier_date) AS delivery_estimated_arrival_lag,
-            DATEDIFF(ok.order_estimated_delivery_date, ok.order_delivered_customer_date) AS arrival_estimated_arrival_lag
-        FROM (
-            SELECT
+            DATE(o.order_purchase_timestamp) AS purchase_date_key,
+            CONCAT(DATE_FORMAT(o.order_purchase_timestamp, '%H:%i'), ':00') AS purchase_time_key,
+            DATE(o.order_approved_at) AS approval_date_key,
+            CONCAT(DATE_FORMAT(o.order_approved_at, '%H:%i'), ':00') AS approval_time_key,
+            DATE(o.order_delivered_carrier_date) AS delivery_date_key,
+            CONCAT(DATE_FORMAT(o.order_delivered_carrier_date, '%H:%i'), ':00') AS delivery_time_key,
+            DATE(o.order_delivered_customer_date) AS arrival_date_key,
+            CONCAT(DATE_FORMAT(o.order_delivered_customer_date, '%H:%i'), ':00') AS arrival_time_key,
+            DATE(o.order_estimated_delivery_date) AS estimated_arrival_date_key,
+            CONCAT(DATE_FORMAT(o.order_estimated_delivery_date, '%H:%i'), ':00') AS estimated_arrival_time_key,
             o.order_id,
-            o.order_status,
-            o.order_purchase_timestamp,
-            o.order_approved_at,
-            o.order_delivered_carrier_date,
-            o.order_delivered_customer_date,
-            o.order_estimated_delivery_date,
-            ac.customer_key,
-            ac.durable_customer_key
-            FROM DB.orders o
-                INNER JOIN DW.all_customer_dim ac ON o.customer_id = ac.customer_id
-            ORDER BY o.order_id
-            LIMIT batch_size OFFSET offset_val
-        ) ok INNER JOIN (
-            SELECT
-                oi.order_id,
-                oi.order_item_id,
-                ap.product_key,
-                ap.durable_product_key,
-                s.seller_key
+            batched_oi.order_item_id,
+            DATEDIFF(o.order_approved_at, o.order_purchase_timestamp) AS purchase_approval_lag,
+            DATEDIFF(o.order_delivered_customer_date, o.order_purchase_timestamp) AS purchase_delivery_lag,
+            DATEDIFF(o.order_delivered_customer_date, o.order_purchase_timestamp) AS purchase_arrival_lag,
+            DATEDIFF(o.order_estimated_delivery_date, o.order_purchase_timestamp) AS purchase_estimated_arrival_lag,
+            DATEDIFF(o.order_delivered_carrier_date, o.order_approved_at) AS approval_delivery_lag,
+            DATEDIFF(o.order_delivered_customer_date, o.order_approved_at) AS approval_arrival_lag,
+            DATEDIFF(o.order_estimated_delivery_date, o.order_approved_at) AS approval_estimated_arrival_lag,
+            DATEDIFF(o.order_delivered_customer_date, o.order_delivered_carrier_date) AS delivery_arrival_lag,
+            DATEDIFF(o.order_estimated_delivery_date, o.order_delivered_carrier_date) AS delivery_estimated_arrival_lag,
+            DATEDIFF(o.order_estimated_delivery_date, o.order_delivered_customer_date) AS arrival_estimated_arrival_lag
+        FROM (
+            SELECT *
             FROM DB.order_items oi
-                INNER JOIN DW.all_product_dim ap ON oi.product_id = ap.product_id AND ap.current_flag = 'is_current'
-                INNER JOIN DW.seller_dim s ON oi.seller_id = s.seller_id
-        ) oik ON oik.order_id = ok.order_id
-            INNER JOIN DB.order_payments op ON oik.order_id = op.order_id
-            INNER JOIN DW.sale_indicator_dim si ON (
+            ORDER BY oi.order_id, oi.order_item_id
+            LIMIT batch_size OFFSET offset_val
+        ) batched_oi
+        INNER JOIN DB.orders o ON batched_oi.order_id = o.order_id
+        INNER JOIN DW.all_customer_dim ac ON o.customer_id = ac.customer_id
+        INNER JOIN DW.all_product_dim ap ON batched_oi.product_id = ap.product_id AND ap.current_flag = 'is_current'
+        INNER JOIN DW.seller_dim s ON batched_oi.seller_id = s.seller_id
+        INNER JOIN DB.order_payments op ON batched_oi.order_id = op.order_id
+        INNER JOIN DW.sale_indicator_dim si ON (
             op.payment_type = si.payment_type
-                AND op.payment_installments = si.payment_installments
-                AND op.payment_sequential = si.payment_sequential
-                AND ok.order_status = si.order_status
-            );
+            AND op.payment_installments = si.payment_installments
+            AND op.payment_sequential = si.payment_sequential
+            AND o.order_status = si.order_status
+        );
 
         SET rows_in_batch = (SELECT COUNT(*) FROM tmp_item_lifecycle_fact);
 

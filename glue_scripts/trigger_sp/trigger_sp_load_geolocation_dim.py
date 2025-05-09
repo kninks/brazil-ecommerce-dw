@@ -21,7 +21,7 @@ glueContext.write_dynamic_frame.from_jdbc_conf(
     connection_options={
         "database": "DW",
         "dbtable": "dummy_sp_runner",
-        "postactions": f"CALL load_geolocation_dim();"
+        "postactions": f"CALL DW.load_geolocation_dim();"
     }
 )
 
